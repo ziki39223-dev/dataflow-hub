@@ -1,0 +1,38 @@
+# dependencies
+node_modules/
+
+# builds
+dist/
+build/
+*.js.map
+*.d.ts
+
+# env
+.env
+.env.local
+.env.*.local
+
+# prisma
+apps/api/prisma/migrations/dev.db*
+*.db-journal
+
+# logs
+logs/
+*.log
+npm-debug.log*
+
+# coverage
+coverage/
+.nyc_output/
+
+# ide
+.idea/
+.vscode/
+*.swp
+
+# os
+.DS_Store
+Thumbs.db
+
+# docker
+docker/data/

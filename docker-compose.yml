@@ -1,0 +1,113 @@
+version: '3.9'
+
+services:
+  # ==================== 数据库 PostgreSQL ====================
+  postgres:
+    image: postgres:16-alpine
+    container_name: dataflow-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: dataflow
+      POSTGRES_PASSWORD: dataflow
+      POSTGRES_DB: dataflow_hub
+      TZ: Asia/Shanghai
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - dataflow-net
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U dataflow -d dataflow_hub']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ==================== Redis 缓存 ====================
+  redis:
+    image: redis:7-alpine
+    container_name: dataflow-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    networks:
+      - dataflow-net
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ==================== RabbitMQ 消息队列 ====================
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: dataflow-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - '5672:5672' # AMQP
+      - '15672:15672' # 管理界面
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - dataflow-net
+    healthcheck:
+      test: ['CMD', 'rabbitmq-diagnostics', 'ping']
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  # ==================== NestJS 后端 API ====================
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: dataflow-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://dataflow:dataflow@postgres:5432/dataflow_hub?schema=public
+      REDIS_HOST: redis
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      NODE_ENV: production
+    ports:
+      - '3000:3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - dataflow-net
+    command: sh -c "npx prisma migrate deploy --schema apps/api/prisma/schema.prisma && node dist/apps/api/main.js"
+
+  # ==================== Nginx 网关 ====================
+  nginx:
+    image: nginx:alpine
+    container_name: dataflow-nginx
+    restart: unless-stopped
+    ports:
+      - '80:80'
+    volumes:
+      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - api
+    networks:
+      - dataflow-net
+
+volumes:
+  postgres_data:
+  redis_data:
+  rabbitmq_data:
+
+networks:
+  dataflow-net:
+    driver: bridge

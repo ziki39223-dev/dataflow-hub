@@ -1,0 +1,233 @@
+// DataFlow Hub - Prisma Schema
+// 企业数据任务协作与智能分析平台
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== 枚举 ====================
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  MEMBER
+  AI_AGENT
+}
+
+enum ProjectStatus {
+  ACTIVE
+  ARCHIVED
+  PAUSED
+}
+
+enum TaskStatus {
+  TODO
+  DOING
+  DONE
+  FAILED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum MemoryType {
+  USER_PREFERENCE
+  BEHAVIOR
+  FEEDBACK
+  SKILL
+}
+
+enum NotificationType {
+  TASK_DONE
+  TASK_ASSIGNED
+  REPORT_GENERATED
+  SYSTEM
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  WEBHOOK
+}
+
+// ==================== 核心模型 ====================
+
+/// 企业/公司
+model Company {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  code        String   @unique
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  users    User[]
+  projects Project[]
+
+  @@map("companies")
+}
+
+/// 用户
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  password  String
+  name      String?
+  role      UserRole @default(MEMBER)
+  companyId Int?     @map("company_id")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  company       Company?        @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  projects      Project[]       @relation("ProjectOwner")
+  tasks         Task[]          @relation("TaskCreator")
+  assignedTasks Task[]          @relation("TaskAssignee")
+  diaries       Diary[]
+  memories      Memory[]
+  reports       Report[]
+  notifications Notification[]
+  refreshTokens RefreshToken[]
+
+  @@map("users")
+}
+
+/// 项目
+model Project {
+  id          Int           @id @default(autoincrement())
+  name        String
+  description String?
+  ownerId     Int           @map("owner_id")
+  companyId   Int?          @map("company_id")
+  status      ProjectStatus @default(ACTIVE)
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  owner   User   @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  company Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  tasks   Task[]
+
+  @@index([ownerId])
+  @@index([companyId])
+  @@map("projects")
+}
+
+/// 任务
+model Task {
+  id          Int          @id @default(autoincrement())
+  projectId   Int          @map("project_id")
+  title       String
+  description String?
+  priority    TaskPriority @default(MEDIUM)
+  status      TaskStatus    @default(TODO)
+  deadline    DateTime?
+  creatorId   Int          @map("creator_id")
+  assigneeId  Int?         @map("assignee_id")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  project  Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  creator  User    @relation("TaskCreator", fields: [creatorId], references: [id], onDelete: Cascade)
+  assignee User?   @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+
+  @@index([projectId])
+  @@index([status])
+  @@index([assigneeId])
+  @@map("tasks")
+}
+
+/// 工作日志/日报
+model Diary {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  content   String   @db.Text
+  summary   String?  @db.Text
+  date      DateTime @default(now())
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([date])
+  @@map("diaries")
+}
+
+/// 长期记忆 (供 AI 使用)
+model Memory {
+  id          Int        @id @default(autoincrement())
+  userId      Int        @map("user_id")
+  type        MemoryType
+  content     String     @db.Text
+  importance  Int        @default(5)
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([type])
+  @@map("memories")
+}
+
+/// 日报/周报 (聚合结果)
+model Report {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  date      DateTime
+  content   String   @db.Text
+  taskTotal Int      @default(0) @map("task_total")
+  taskDone  Int      @default(0) @map("task_done")
+  diaryCount Int     @default(0) @map("diary_count")
+  aiSummary String?  @db.Text @map("ai_summary")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@index([userId])
+  @@index([date])
+  @@map("reports")
+}
+
+/// 通知
+model Notification {
+  id        Int              @id @default(autoincrement())
+  userId    Int              @map("user_id")
+  type      NotificationType
+  channel   NotificationChannel @default(IN_APP)
+  title     String
+  content   String           @db.Text
+  isRead    Boolean          @default(false) @map("is_read")
+  metadata  Json?
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRead])
+  @@map("notifications")
+}
+
+/// 刷新令牌
+model RefreshToken {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+  revoked   Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
