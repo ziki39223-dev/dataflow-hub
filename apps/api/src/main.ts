@@ -19,9 +19,11 @@ async function bootstrap() {
   // 全局 API 前缀
   app.setGlobalPrefix(prefix);
 
-  // CORS
+  // CORS：默认只放通本地前端，生产通过 CORS_ORIGINS 配置白名单（逗号分隔）
   app.enableCors({
-    origin: true,
+    origin: process.env.CORS_ORIGINS
+      ? process.env.CORS_ORIGINS.split(',').map((o) => o.trim())
+      : ['http://localhost:3000'],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   });

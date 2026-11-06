@@ -1,6 +1,6 @@
 {
   "name": "dataflow-hub",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "DataFlow Hub - 企业数据任务协作与智能分析平台",
   "private": true,
   "license": "MIT",
